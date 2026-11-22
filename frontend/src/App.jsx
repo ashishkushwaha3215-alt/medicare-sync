@@ -7,8 +7,11 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Doctors from './pages/Doctors';
 import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
 import Reports from './pages/Reports';
 import AdminPanel from './pages/AdminPanel';
 
@@ -19,13 +22,13 @@ export default function App() {
         <Toaster position="top-right" />
         <Navbar />
         <Routes>
-          {/* Public Routes */}
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/doctors" element={<Doctors />} />
 
-          {/* Protected Routes (All Logged-in Users) */}
           <Route
             path="/dashboard"
             element={
@@ -35,7 +38,15 @@ export default function App() {
             }
           />
 
-          {/* Patient-only Route */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+
           <Route
             path="/reports"
             element={
@@ -45,7 +56,6 @@ export default function App() {
             }
           />
 
-          {/* Admin-only Route */}
           <Route
             path="/admin"
             element={
@@ -55,7 +65,6 @@ export default function App() {
             }
           />
 
-          {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

@@ -13,10 +13,9 @@ export function AuthProvider({ children }) {
       setLoading(false);
       return;
     }
-
     api
       .get('/auth/me')
-      .then((res) => setUser(res.data.data))
+      .then((res) => setUser(res.data.user))
       .catch(() => {
         localStorage.removeItem('token');
         setUser(null);
@@ -26,16 +25,16 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
-    localStorage.setItem('token', res.data.data.token);
-    setUser(res.data.data.user);
-    return res.data.data.user;
+    localStorage.setItem('token', res.data.token);
+    setUser(res.data.user);
+    return res.data.user;
   };
 
   const register = async (formData) => {
     const res = await api.post('/auth/register', formData);
-    localStorage.setItem('token', res.data.data.token);
-    setUser(res.data.data.user);
-    return res.data.data.user;
+    localStorage.setItem('token', res.data.token);
+    setUser(res.data.user);
+    return res.data.user;
   };
 
   const logout = () => {
@@ -44,7 +43,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

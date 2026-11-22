@@ -56,7 +56,11 @@ export default function Login() {
               placeholder="••••••••"
             />
           </div>
-
+<div style={{ textAlign: 'right', marginBottom: '0.85rem', marginTop: '-0.5rem' }}>
+  <Link to="/forgot-password" style={{ fontSize: '0.84rem', color: '#0284c7', fontWeight: 600 }}>
+    Forgot Password?
+  </Link>
+</div>
           <button
             type="submit"
             disabled={submitting}
