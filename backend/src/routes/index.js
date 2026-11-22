@@ -5,5 +5,6 @@ router.get('/', (req, res) => {
 });
 
 router.use('/auth', require('./auth.routes'));
+router.use('/doctors', require('./doctor.routes'));
 
 module.exports = router;
