@@ -1,169 +1,218 @@
 const Appointment = require('../models/Appointment');
-const DoctorProfile = require('../models/DoctorProfile');
-const ApiError = require('../utils/ApiError');
-const asyncHandler = require('../utils/asyncHandler');
+const Doctor = require('../models/Doctor');
+const MedicalReport = require('../models/MedicalReport');
+const User = require('../models/User');
+const sendEmail = require('../utils/sendEmail');
+const logActivity = require('../utils/logActivity');
 
-// @desc    Get booked slots for a doctor on a specific date
-// @route   GET /api/v1/appointments/booked-slots?doctorId=...&date=YYYY-MM-DD
-exports.getBookedSlots = asyncHandler(async (req, res) => {
-  const { doctorId, date } = req.query;
-  if (!doctorId || !date) {
-    throw new ApiError(400, 'doctorId and date are required');
+exports.getBookedSlots = async (req, res, next) => {
+  try {
+    const { doctorId, date } = req.query;
+    if (!doctorId || !date) {
+      return res.status(400).json({ success: false, message: 'doctorId and date are required' });
+    }
+
+    const active = await Appointment.find({
+      doctor: doctorId,
+      appointmentDate: date,
+      status: { $ne: 'cancelled' },
+    }).select('timeSlot');
+
+    res.json({ success: true, data: active.map((a) => a.timeSlot) });
+  } catch (err) {
+    next(err);
   }
+};
 
-  const booked = await Appointment.find({
-    doctor: doctorId,
-    appointmentDate: date,
-    status: { $ne: 'cancelled' },
-  }).select('timeSlot');
+exports.bookAppointment = async (req, res, next) => {
+  try {
+    const { doctorId, appointmentDate, timeSlot, symptoms } = req.body;
 
-  res.json({
-    success: true,
-    data: booked.map((b) => b.timeSlot),
-  });
-});
+    const doctor = await Doctor.findById(doctorId).populate('user', 'name email');
+    if (!doctor || !doctor.isApproved) {
+      return res.status(404).json({ success: false, message: 'Approved doctor not found' });
+    }
 
-// @desc    Book a new appointment (Patient only)
-// @route   POST /api/v1/appointments
-exports.bookAppointment = asyncHandler(async (req, res) => {
-  const { doctorId, appointmentDate, timeSlot, symptoms } = req.body;
+    if (!doctor.timeSlots.includes(timeSlot)) {
+      return res.status(400).json({ success: false, message: 'Invalid time slot for this doctor' });
+    }
 
-  const doctor = await DoctorProfile.findById(doctorId);
-  if (!doctor || !doctor.isApproved) {
-    throw new ApiError(404, 'Approved doctor not found');
+    const conflict = await Appointment.findOne({
+      doctor: doctorId,
+      appointmentDate,
+      timeSlot,
+      status: { $ne: 'cancelled' },
+    });
+
+    if (conflict) {
+      return res.status(409).json({
+        success: false,
+        message: 'This time slot is already booked. Please choose another.',
+      });
+    }
+
+    const appointment = await Appointment.create({
+      patient: req.user._id,
+      doctor: doctorId,
+      appointmentDate,
+      timeSlot,
+      symptoms,
+    });
+
+    await logActivity({
+      user: req.user,
+      action: 'APPOINTMENT_BOOKED',
+      details: `${req.user.name} booked ${doctor.user?.name} on ${appointmentDate} (${timeSlot})`,
+    });
+
+    await sendEmail({
+      to: req.user.email,
+      subject: 'Appointment Booked — MediCare Sync',
+      text: `Your appointment with ${doctor.user?.name} (${doctor.specialization}) is booked for ${appointmentDate} at ${timeSlot}.`,
+    });
+
+    res.status(201).json({ success: true, data: appointment });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ success: false, message: 'Slot was just booked by another user' });
+    }
+    next(err);
   }
+};
 
-  // Double-booking check: kya ye slot pehle se booked hai?
-  const alreadyBooked = await Appointment.findOne({
-    doctor: doctorId,
-    appointmentDate,
-    timeSlot,
-    status: { $ne: 'cancelled' },
-  });
+exports.getMyAppointments = async (req, res, next) => {
+  try {
+    const filter = {};
+    if (req.query.status) filter.status = req.query.status;
 
-  if (alreadyBooked) {
-    throw new ApiError(409, 'This time slot is already booked. Please choose another.');
-  }
+    if (req.user.role === 'patient') {
+      filter.patient = req.user._id;
+    } else if (req.user.role === 'doctor') {
+      const doctorProfile = await Doctor.findOne({ user: req.user._id });
+      if (!doctorProfile) {
+        return res.status(404).json({ success: false, message: 'Doctor profile not found' });
+      }
+      filter.doctor = doctorProfile._id;
+    }
 
-  const appointment = await Appointment.create({
-    patient: req.user._id,
-    doctor: doctorId,
-    appointmentDate,
-    timeSlot,
-    symptoms,
-  });
-
-  res.status(201).json({
-    success: true,
-    message: 'Appointment booked successfully',
-    data: appointment,
-  });
-});
-
-// @desc    Get logged-in user's appointments (Patient, Doctor, or Admin)
-// @route   GET /api/v1/appointments/my
-exports.getMyAppointments = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, status } = req.query;
-  const filter = {};
-
-  if (status) filter.status = status;
-
-  if (req.user.role === 'patient') {
-    filter.patient = req.user._id;
-  } else if (req.user.role === 'doctor') {
-    const docProfile = await DoctorProfile.findOne({ user: req.user._id });
-    if (!docProfile) throw new ApiError(404, 'Doctor profile not found');
-    filter.doctor = docProfile._id;
-  }
-  // Admin ke liye filter empty rahega, toh saari appointments dikhengi
-
-  const skip = (Number(page) - 1) * Number(limit);
-
-  const [appointments, total] = await Promise.all([
-    Appointment.find(filter)
-      .populate('patient', 'name email phone gender')
+    const appointments = await Appointment.find(filter)
+      .populate('patient', 'name email phone gender age bloodGroup')
       .populate({
         path: 'doctor',
-        select: 'specialization consultationFee',
         populate: { path: 'user', select: 'name email phone' },
       })
-      .sort('-createdAt')
-      .skip(skip)
-      .limit(Number(limit)),
-    Appointment.countDocuments(filter),
-  ]);
+      .sort('-createdAt');
 
-  res.json({
-    success: true,
-    data: appointments,
-    pagination: {
-      page: Number(page),
-      limit: Number(limit),
-      total,
-      pages: Math.ceil(total / Number(limit)),
-    },
-  });
-});
-
-// @desc    Update appointment status (Cancel by Patient, Confirm/Complete by Doctor)
-// @route   PATCH /api/v1/appointments/:id/status
-exports.updateAppointmentStatus = asyncHandler(async (req, res) => {
-  const { status } = req.body;
-  const appointment = await Appointment.findById(req.params.id).populate('doctor');
-
-  if (!appointment) {
-    throw new ApiError(404, 'Appointment not found');
+    res.json({ success: true, data: appointments });
+  } catch (err) {
+    next(err);
   }
+};
 
-  // Ownership & Role check
-  if (req.user.role === 'patient') {
-    if (!appointment.patient.equals(req.user._id)) {
-      throw new ApiError(403, 'Not authorized to modify this appointment');
+exports.updateAppointmentStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    const appointment = await Appointment.findById(req.params.id)
+      .populate('patient', 'name email')
+      .populate({ path: 'doctor', populate: { path: 'user', select: 'name' } });
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
-    if (status !== 'cancelled') {
-      throw new ApiError(403, 'Patients can only cancel appointments');
+
+    if (req.user.role === 'patient') {
+      if (appointment.patient._id.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Not authorized' });
+      }
+      if (status !== 'cancelled') {
+        return res.status(400).json({ success: false, message: 'Patients can only cancel' });
+      }
     }
-  } else if (req.user.role === 'doctor') {
-    if (!appointment.doctor.user.equals(req.user._id)) {
-      throw new ApiError(403, 'Not authorized for this appointment');
+
+    appointment.status = status;
+    await appointment.save();
+
+    await logActivity({
+      user: req.user,
+      action: `APPOINTMENT_${status.toUpperCase()}`,
+      details: `Appointment on ${appointment.appointmentDate} (${appointment.timeSlot}) marked ${status}`,
+    });
+
+    if (appointment.patient?.email) {
+      await sendEmail({
+        to: appointment.patient.email,
+        subject: `Appointment ${status.toUpperCase()} — MediCare Sync`,
+        text: `Hi ${appointment.patient.name}, your appointment on ${appointment.appointmentDate} (${appointment.timeSlot}) is now ${status}.`,
+      });
     }
+
+    res.json({ success: true, data: appointment });
+  } catch (err) {
+    next(err);
   }
+};
 
-  appointment.status = status;
-  await appointment.save();
+exports.addPrescription = async (req, res, next) => {
+  try {
+    const { diagnosis, medicines, notes } = req.body;
+    const appointment = await Appointment.findById(req.params.id)
+      .populate('patient', 'name email')
+      .populate({ path: 'doctor', populate: { path: 'user', select: 'name' } });
 
-  res.json({
-    success: true,
-    message: `Appointment marked as ${status}`,
-    data: appointment,
-  });
-});
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
 
-// @desc    Add digital prescription (Doctor only)
-// @route   PUT /api/v1/appointments/:id/prescription
-exports.addPrescription = asyncHandler(async (req, res) => {
-  const { diagnosis, medicines, notes } = req.body;
-  const appointment = await Appointment.findById(req.params.id).populate('doctor');
+    appointment.prescription = {
+      diagnosis,
+      medicines: Array.isArray(medicines) ? medicines : [],
+      notes,
+      prescribedAt: new Date(),
+    };
+    appointment.status = 'completed';
+    await appointment.save();
 
-  if (!appointment) {
-    throw new ApiError(404, 'Appointment not found');
+    await logActivity({
+      user: req.user,
+      action: 'PRESCRIPTION_ISSUED',
+      details: `Dr. ${req.user.name} prescribed for ${appointment.patient?.name} (${diagnosis})`,
+    });
+
+    if (appointment.patient?.email) {
+      await sendEmail({
+        to: appointment.patient.email,
+        subject: 'Digital Prescription Ready — MediCare Sync',
+        text: `Hi ${appointment.patient.name}, Dr. ${req.user.name} has uploaded your digital prescription for ${diagnosis}. View & download PDF on your dashboard.`,
+      });
+    }
+
+    res.json({ success: true, data: appointment });
+  } catch (err) {
+    next(err);
   }
+};
 
-  if (!appointment.doctor.user.equals(req.user._id)) {
-    throw new ApiError(403, 'Not authorized to add prescription for this appointment');
+// GET /api/v1/appointments/patient/:patientId/history (Doctor/Admin view patient history & lab reports)
+exports.getPatientHistory = async (req, res, next) => {
+  try {
+    const { patientId } = req.params;
+    const [patient, pastAppointments, reports] = await Promise.all([
+      User.findById(patientId).select('name email phone gender age bloodGroup address'),
+      Appointment.find({ patient: patientId })
+        .populate({ path: 'doctor', populate: { path: 'user', select: 'name' } })
+        .sort('-appointmentDate'),
+      MedicalReport.find({ patient: patientId }).sort('-createdAt'),
+    ]);
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
+    res.json({
+      success: true,
+      data: { patient, appointments: pastAppointments, reports },
+    });
+  } catch (err) {
+    next(err);
   }
-
-  appointment.prescription = {
-    diagnosis: diagnosis || '',
-    medicines: Array.isArray(medicines) ? medicines : [],
-    notes: notes || '',
-  };
-  appointment.status = 'completed';
-  await appointment.save();
-
-  res.json({
-    success: true,
-    message: 'Prescription added and appointment completed',
-    data: appointment,
-  });
-});
+};

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema(
   {
@@ -8,7 +9,6 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Name is required'],
       trim: true,
       minlength: 2,
-      maxlength: 50,
     },
     email: {
       type: String,
@@ -16,7 +16,6 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
-      match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
     },
     password: {
       type: String,
@@ -29,37 +28,31 @@ const userSchema = new mongoose.Schema(
       enum: ['patient', 'doctor', 'admin'],
       default: 'patient',
     },
-    phone: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-    gender: {
-      type: String,
-      enum: ['male', 'female', 'other', ''],
-      default: '',
-    },
-    avatar: {
-      type: String,
-      default: '',
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
+    phone: { type: String, trim: true, default: '' },
+    gender: { type: String, enum: ['Male', 'Female', 'Other', ''], default: '' },
+    age: { type: Number, min: 0, max: 130 },
+    bloodGroup: { type: String, trim: true, default: '' },
+    address: { type: String, trim: true, default: '' },
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
   },
   { timestamps: true }
 );
 
-// Save karne se pehle password ko automatically hash (encrypt) karega
 userSchema.pre('save', async function () {
   if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, 12);
 });
 
-// Login ke waqt plain password ko hashed password se match karega
-userSchema.methods.matchPassword = function (plainPassword) {
-  return bcrypt.compare(plainPassword, this.password);
+userSchema.methods.comparePassword = async function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+userSchema.methods.getResetPasswordToken = function () {
+  const resetToken = crypto.randomBytes(20).toString('hex');
+  this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  this.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 mins
+  return resetToken;
 };
 
 module.exports = mongoose.model('User', userSchema);

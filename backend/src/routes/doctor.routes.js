@@ -1,20 +1,27 @@
-const router = require('express').Router();
+const express = require('express');
+const { protect, authorize } = require('../middleware/auth');
 const {
-  getAllDoctors,
+  getDoctors,
   getDoctorById,
+  getMyDoctorProfile,
   updateMyDoctorProfile,
-  getAdminAllDoctors,
-  toggleDoctorApproval,
-} = require('../controllers/doctor.controller');
-const { protect, restrictTo } = require('../middlewares/auth.middleware');
+  getAllDoctorsAdmin,
+  toggleApproveDoctor,
+} = require('../controllers/doctorController');
 
-// Specific routes pehle
-router.put('/profile/me', protect, restrictTo('doctor'), updateMyDoctorProfile);
-router.get('/admin/all', protect, restrictTo('admin'), getAdminAllDoctors);
-router.patch('/admin/:id/approve', protect, restrictTo('admin'), toggleDoctorApproval);
+const router = express.Router();
 
-// Public & dynamic :id routes baad mein
-router.get('/', getAllDoctors);
+// Public routes
+router.get('/', getDoctors);
+
+// Doctor self-management routes
+router.get('/me/profile', protect, authorize('doctor'), getMyDoctorProfile);
+router.put('/me/profile', protect, authorize('doctor'), updateMyDoctorProfile);
+
+// Admin routes
+router.get('/admin/all', protect, authorize('admin'), getAllDoctorsAdmin);
+router.patch('/admin/:id/approve', protect, authorize('admin'), toggleApproveDoctor);
+
 router.get('/:id', getDoctorById);
 
 module.exports = router;

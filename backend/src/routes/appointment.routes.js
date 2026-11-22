@@ -1,22 +1,50 @@
-const router = require('express').Router();
+const express = require('express');
+const { body } = require('express-validator');
+const validate = require('../middleware/validate');
+const { protect, authorize } = require('../middleware/auth');
 const {
   getBookedSlots,
   bookAppointment,
   getMyAppointments,
   updateAppointmentStatus,
   addPrescription,
-} = require('../controllers/appointment.controller');
-const { protect, restrictTo } = require('../middlewares/auth.middleware');
+  getPatientHistory,
+} = require('../controllers/appointmentController');
 
-// Public route: frontend par booked slots disable dikhane ke liye
+const router = express.Router();
+
 router.get('/booked-slots', getBookedSlots);
 
-// Protected routes (Login zaroori)
 router.use(protect);
 
-router.post('/', restrictTo('patient'), bookAppointment);
+router.post(
+  '/',
+  authorize('patient'),
+  [
+    body('doctorId').isMongoId().withMessage('Valid doctorId required'),
+    body('appointmentDate').notEmpty().withMessage('Appointment date is required'),
+    body('timeSlot').notEmpty().withMessage('Time slot is required'),
+  ],
+  validate,
+  bookAppointment
+);
+
 router.get('/my', getMyAppointments);
-router.patch('/:id/status', updateAppointmentStatus);
-router.put('/:id/prescription', restrictTo('doctor'), addPrescription);
+router.get('/patient/:patientId/history', authorize('doctor', 'admin'), getPatientHistory);
+
+router.patch(
+  '/:id/status',
+  [body('status').isIn(['confirmed', 'completed', 'cancelled']).withMessage('Invalid status')],
+  validate,
+  updateAppointmentStatus
+);
+
+router.put(
+  '/:id/prescription',
+  authorize('doctor'),
+  [body('diagnosis').trim().notEmpty().withMessage('Diagnosis is required')],
+  validate,
+  addPrescription
+);
 
 module.exports = router;
