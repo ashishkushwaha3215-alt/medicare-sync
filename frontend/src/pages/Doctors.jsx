@@ -1,19 +1,26 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
+const DOCTOR_PHOTOS = [
+  'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=600&q=80',
+  'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=600&q=80',
+  'https://images.unsplash.com/photo-1594824476967-48c8b964273f?auto=format&fit=crop&w=600&q=80',
+];
+
 export default function Doctors() {
+  const [searchParams] = useSearchParams();
   const [doctors, setDoctors] = useState([]);
   const [search, setSearch] = useState('');
-  const [specialization, setSpecialization] = useState('');
+  const [specialization, setSpecialization] = useState(searchParams.get('specialization') || '');
   const [sort, setSort] = useState('-createdAt');
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  // Booking modal state
+  // Booking state
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [bookedSlots, setBookedSlots] = useState([]);
@@ -30,8 +37,23 @@ export default function Doctors() {
       const res = await api.get('/doctors', {
         params: { page, limit: 6, search, specialization, sort },
       });
-      setDoctors(res.data.data);
+      const list = res.data.data;
+      setDoctors(list);
       setPages(res.data.pagination.pages || 1);
+
+      // Agar Home page se "Book Time Slot" click karke aaye hain
+      const bookId = searchParams.get('book');
+      if (bookId) {
+        const target = list.find((d) => d._id === bookId);
+        if (target) {
+          if (!user) {
+            toast('Please login as a patient to complete booking', { icon: '🔐' });
+            navigate('/login');
+          } else if (user.role === 'patient') {
+            setSelectedDoctor(target);
+          }
+        }
+      }
     } catch {
       toast.error('Failed to load doctors');
     } finally {
@@ -43,7 +65,6 @@ export default function Doctors() {
     fetchDoctors();
   }, [page, specialization, sort]);
 
-  // Jab doctor ya date select ho, tab us din ke already booked slots fetch karein
   useEffect(() => {
     if (!selectedDoctor || !date) return;
     api
@@ -76,6 +97,7 @@ export default function Doctors() {
     setSelectedDoctor(doc);
     setSelectedSlot('');
     setSymptoms('');
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   };
 
   const handleBook = async (e) => {
@@ -104,7 +126,14 @@ export default function Doctors() {
 
   return (
     <div className="container">
-      <h2 style={{ marginBottom: '1rem' }}>Find Verified Doctors</h2>
+      <div className="section-header">
+        <div>
+          <h2 style={{ fontSize: '1.7rem', fontWeight: 800 }}>Find Verified Doctors</h2>
+          <p style={{ color: 'var(--text-muted)' }}>
+            Filter by specialty, compare experience &amp; consultation fees, and lock your slot
+          </p>
+        </div>
+      </div>
 
       {/* Search, Filter & Sort Bar */}
       <form
@@ -112,14 +141,14 @@ export default function Doctors() {
         className="card"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: '0.75rem',
-          marginBottom: '1.5rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+          gap: '0.85rem',
+          marginBottom: '1.75rem',
         }}
       >
         <input
           type="text"
-          placeholder="Search by doctor name..."
+          placeholder="Search doctor name..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -142,38 +171,46 @@ export default function Doctors() {
           <option value="-experience">Most Experienced</option>
         </select>
         <button type="submit" className="btn btn-primary">
-          Search
+          Search Doctors
         </button>
       </form>
 
-      {/* Doctors List */}
+      {/* Doctors Grid with Photos */}
       {loading ? (
         <p>Loading doctors...</p>
       ) : doctors.length === 0 ? (
         <div className="card">No approved doctors found matching your criteria.</div>
       ) : (
         <div className="grid-3">
-          {doctors.map((doc) => (
-            <div key={doc._id} className="card">
-              <h3 style={{ color: '#0f172a' }}>{doc.user?.name}</h3>
-              <p style={{ color: '#0284c7', fontWeight: 600, fontSize: '0.92rem' }}>
-                {doc.specialization}
-              </p>
-              <p style={{ color: '#475569', fontSize: '0.88rem', marginTop: '0.5rem' }}>
-                Experience: <strong>{doc.experience} yrs</strong> · Fee:{' '}
-                <strong>₹{doc.consultationFee}</strong>
-              </p>
-              <p style={{ color: '#64748b', fontSize: '0.84rem', marginTop: '0.35rem' }}>
-                Days: {doc.availableDays?.join(', ')}
-              </p>
+          {doctors.map((doc, idx) => (
+            <div key={doc._id} className="doctor-card">
+              <div className="doctor-img-wrap">
+                <img
+                  src={DOCTOR_PHOTOS[idx % DOCTOR_PHOTOS.length]}
+                  alt={doc.user?.name || 'Doctor'}
+                />
+                <span className="verified-pill">Verified</span>
+                <span className="spec-pill">{doc.specialization}</span>
+              </div>
 
-              <button
-                onClick={() => openBooking(doc)}
-                className="btn btn-primary"
-                style={{ width: '100%', marginTop: '1rem' }}
-              >
-                Book Appointment
-              </button>
+              <div className="doctor-body">
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>{doc.user?.name}</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: '0.3rem' }}>
+                  Experience: <strong>{doc.experience} yrs</strong> · Fee:{' '}
+                  <strong>₹{doc.consultationFee}</strong>
+                </p>
+                <p style={{ color: '#64748b', fontSize: '0.83rem', marginTop: '0.35rem' }}>
+                  Available: {doc.availableDays?.join(', ')}
+                </p>
+
+                <button
+                  onClick={() => openBooking(doc)}
+                  className="btn btn-primary"
+                  style={{ width: '100%', marginTop: '1.1rem' }}
+                >
+                  Select Date &amp; Book Slot
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -204,17 +241,22 @@ export default function Doctors() {
 
       {/* Booking Form Box */}
       {selectedDoctor && (
-        <div className="card" style={{ marginTop: '2rem', border: '2px solid #0284c7' }}>
+        <div className="card" style={{ marginTop: '2.25rem', border: '2px solid #0284c7' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3>Book with {selectedDoctor.user?.name}</h3>
+            <div>
+              <h3>Book Appointment with {selectedDoctor.user?.name}</h3>
+              <p style={{ color: '#0284c7', fontSize: '0.9rem', fontWeight: 600 }}>
+                {selectedDoctor.specialization} · Consultation Fee: ₹{selectedDoctor.consultationFee}
+              </p>
+            </div>
             <button onClick={() => setSelectedDoctor(null)} className="btn btn-outline">
               Close
             </button>
           </div>
 
-          <form onSubmit={handleBook} style={{ marginTop: '1rem' }}>
-            <div className="form-group" style={{ maxWidth: '250px' }}>
-              <label>Select Date</label>
+          <form onSubmit={handleBook} style={{ marginTop: '1.25rem' }}>
+            <div className="form-group" style={{ maxWidth: '260px' }}>
+              <label>1. Choose Appointment Date</label>
               <input
                 type="date"
                 min={new Date().toISOString().split('T')[0]}
@@ -225,8 +267,8 @@ export default function Doctors() {
             </div>
 
             <div className="form-group">
-              <label>Available Time Slots (Grey = Already Booked)</label>
-              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <label>2. Select Available Time Slot (Disabled = Already Booked)</label>
+              <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
                 {selectedDoctor.timeSlots.map((slot) => {
                   const isBooked = bookedSlots.includes(slot);
                   const isSelected = selectedSlot === slot;
@@ -246,7 +288,7 @@ export default function Doctors() {
             </div>
 
             <div className="form-group">
-              <label>Symptoms / Reason for Visit</label>
+              <label>3. Symptoms / Reason for Visit</label>
               <textarea
                 rows={2}
                 value={symptoms}
