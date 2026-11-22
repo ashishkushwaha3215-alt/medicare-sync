@@ -1,5 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  Activity,
+  Search,
+  CalendarCheck,
+  ShieldCheck,
+  Clock,
+  UserCheck,
+  Stethoscope,
+  FileHeart,
+  Building2,
+  ArrowRight,
+} from 'lucide-react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
@@ -32,7 +44,9 @@ export default function Home() {
       {/* Hero Banner */}
       <section className="hero-section">
         <div>
-          <span className="hero-badge">24/7 Smart Digital Healthcare Portal</span>
+          <span className="hero-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+            <Activity size={16} /> 24/7 Smart Digital Healthcare Portal
+          </span>
           <h1 className="hero-title">Your Health, Booked &amp; Synced in Seconds.</h1>
           <p className="hero-subtitle">
             Consult verified Cardiologists, Dermatologists &amp; Physicians. Lock real-time
@@ -64,13 +78,13 @@ export default function Home() {
               <option value="General Physician">General Physician</option>
             </select>
             <button type="submit" className="btn btn-white">
-              Find Slots
+              <Search size={16} /> Find Slots
             </button>
           </form>
 
           <div style={{ display: 'flex', gap: '0.85rem', flexWrap: 'wrap' }}>
             <Link to="/doctors" className="btn btn-white">
-              Book Appointment Now
+              <CalendarCheck size={18} /> Book Appointment Now
             </Link>
             {!user ? (
               <Link
@@ -123,7 +137,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Featured Verified Doctors with Real Photos & Direct Slot Booking */}
+      {/* Featured Verified Doctors */}
       <section style={{ marginBottom: '2.75rem' }}>
         <div className="section-header">
           <div>
@@ -133,12 +147,14 @@ export default function Home() {
             </p>
           </div>
           <Link to="/doctors" className="btn btn-outline">
-            View All Doctors &rarr;
+            View All Doctors <ArrowRight size={16} />
           </Link>
         </div>
 
         {featuredDoctors.length === 0 ? (
-          <div className="card">Loading specialists...</div>
+          <div className="card">
+            Make sure your Backend server (port 5000) is running to load verified doctors.
+          </div>
         ) : (
           <div className="grid-3">
             {featuredDoctors.map((doc, idx) => (
@@ -148,7 +164,12 @@ export default function Home() {
                     src={DOCTOR_PHOTOS[idx % DOCTOR_PHOTOS.length]}
                     alt={doc.user?.name || 'Doctor'}
                   />
-                  <span className="verified-pill">Verified</span>
+                  <span
+                    className="verified-pill"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                  >
+                    <ShieldCheck size={14} /> Verified
+                  </span>
                   <span className="spec-pill">{doc.specialization}</span>
                 </div>
 
@@ -165,13 +186,16 @@ export default function Home() {
                         style={{
                           background: '#f1f5f9',
                           color: '#334155',
-                          padding: '0.2rem 0.55rem',
+                          padding: '0.22rem 0.55rem',
                           borderRadius: '6px',
                           fontSize: '0.78rem',
                           fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
                         }}
                       >
-                        {slot}
+                        <Clock size={12} /> {slot}
                       </span>
                     ))}
                   </div>
@@ -181,7 +205,7 @@ export default function Home() {
                     className="btn btn-primary"
                     style={{ width: '100%', marginTop: '1.15rem' }}
                   >
-                    Book Time Slot
+                    <CalendarCheck size={16} /> Book Time Slot
                   </Link>
                 </div>
               </div>
@@ -203,18 +227,48 @@ export default function Home() {
 
         <div className="grid-3">
           <div className="card">
-            <h3 style={{ color: '#0284c7', marginBottom: '0.4rem' }}>For Patients</h3>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                background: '#e0f2fe',
+                color: '#0284c7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '0.85rem',
+              }}
+            >
+              <FileHeart size={22} />
+            </div>
+            <h3 style={{ color: '#0f172a', marginBottom: '0.4rem' }}>For Patients</h3>
             <p style={{ color: '#475569', fontSize: '0.9rem', marginBottom: '1rem' }}>
-              Search doctors by specialization, lock guaranteed time slots, download prescriptions,
-              and upload PDF/JPG lab reports.
+              Search doctors by specialization, lock guaranteed time slots, view prescriptions, and
+              upload PDF/JPG lab reports.
             </p>
             <Link to={user ? '/dashboard' : '/register'} className="btn btn-outline">
-              {user ? 'Open Patient Dashboard' : 'Register as Patient'}
+              <UserCheck size={16} /> {user ? 'Open Patient Dashboard' : 'Register as Patient'}
             </Link>
           </div>
 
           <div className="card">
-            <h3 style={{ color: '#0d9488', marginBottom: '0.4rem' }}>For Doctors</h3>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                background: '#ccfbf1',
+                color: '#0d9488',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '0.85rem',
+              }}
+            >
+              <Stethoscope size={22} />
+            </div>
+            <h3 style={{ color: '#0f172a', marginBottom: '0.4rem' }}>For Doctors</h3>
             <p style={{ color: '#475569', fontSize: '0.9rem', marginBottom: '1rem' }}>
               Manage daily patient queues, confirm appointments, and issue structured digital
               prescriptions in one click.
@@ -225,7 +279,22 @@ export default function Home() {
           </div>
 
           <div className="card">
-            <h3 style={{ color: '#4f46e5', marginBottom: '0.4rem' }}>For Clinic Admins</h3>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                background: '#e0e7ff',
+                color: '#4f46e5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '0.85rem',
+              }}
+            >
+              <Building2 size={22} />
+            </div>
+            <h3 style={{ color: '#0f172a', marginBottom: '0.4rem' }}>For Clinic Admins</h3>
             <p style={{ color: '#475569', fontSize: '0.9rem', marginBottom: '1rem' }}>
               Verify medical credentials, approve/revoke doctor profiles, and monitor live clinic
               appointment analytics.
