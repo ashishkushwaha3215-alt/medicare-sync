@@ -16,7 +16,7 @@ exports.protect = asyncHandler(async (req, res, next) => {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
   const user = await User.findById(decoded.id);
 
-  if (!user || !user.isActive) {
+  if (!user || user.isActive === false) {
     throw new ApiError(401, 'User no longer exists or is deactivated');
   }
 

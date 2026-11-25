@@ -1,42 +1,71 @@
+
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
+
 const User = require('../models/User');
-const Doctor = require('../models/Doctor');
+const Doctor = require('../models/DoctorProfile');
+
+const generateToken = require('../utils/generateToken');
 const sendEmail = require('../utils/sendEmail');
 const logActivity = require('../utils/logActivity');
 
-const signToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  });
-
+// @desc Register user
+// @route POST /api/v1/auth/register
 exports.register = async (req, res, next) => {
+  let user;
+
   try {
-    const { name, email, password, role, phone, specialization, experience, consultationFee } =
-      req.body;
-
-    const allowedRole = role === 'doctor' ? 'doctor' : 'patient';
-
-    const existing = await User.findOne({ email });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'Email already registered' });
-    }
-
-    const user = await User.create({
+    const {
       name,
       email,
+      password,
+      role,
+      phone,
+      specialization,
+      experience,
+      consultationFee,
+    } = req.body;
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Public registration cannot create admin accounts
+    const allowedRole = role === 'doctor' ? 'doctor' : 'patient';
+
+    const existing = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already registered',
+      });
+    }
+
+    user = await User.create({
+      name,
+      email: normalizedEmail,
       password,
       role: allowedRole,
       phone,
     });
 
     if (allowedRole === 'doctor') {
-      await Doctor.create({
-        user: user._id,
-        specialization: specialization || 'General Physician',
-        experience: Number(experience) || 1,
-        consultationFee: Number(consultationFee) || 500,
-      });
+      try {
+        await Doctor.create({
+          user: user._id,
+          specialization: specialization || 'General Physician',
+          experience:
+            experience !== undefined ? Number(experience) : 1,
+          consultationFee:
+            consultationFee !== undefined
+              ? Number(consultationFee)
+              : 500,
+        });
+      } catch (error) {
+        // Cleanup user if doctor profile creation fails
+        await User.findByIdAndDelete(user._id);
+        throw error;
+      }
     }
 
     await logActivity({
@@ -51,7 +80,8 @@ exports.register = async (req, res, next) => {
       text: `Hi ${user.name}, your ${allowedRole} account has been created successfully.`,
     });
 
-    const token = signToken(user._id);
+    const token = generateToken(user._id);
+
     res.status(201).json({
       success: true,
       token,
@@ -68,13 +98,25 @@ exports.register = async (req, res, next) => {
   }
 };
 
+// @desc Login user
+// @route POST /api/v1/auth/login
 exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password');
 
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+    }).select('+password');
+
+    if (
+      !user ||
+      user.isActive === false ||
+      !(await user.comparePassword(password))
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password',
+      });
     }
 
     await logActivity({
@@ -83,7 +125,8 @@ exports.login = async (req, res, next) => {
       details: `${user.email} logged in`,
     });
 
-    const token = signToken(user._id);
+    const token = generateToken(user._id);
+
     res.json({
       success: true,
       token,
@@ -104,19 +147,51 @@ exports.login = async (req, res, next) => {
   }
 };
 
+// @desc Get logged-in user
+// @route GET /api/v1/auth/me
 exports.getMe = async (req, res) => {
-  res.json({ success: true, user: req.user });
+  res.json({
+    success: true,
+    user: req.user,
+  });
 };
 
-// PUT /api/v1/auth/profile
+// @desc Update user profile
+// @route PUT /api/v1/auth/profile
 exports.updateProfile = async (req, res, next) => {
   try {
-    const { name, phone, gender, age, bloodGroup, address } = req.body;
+    const allowedFields = [
+      'name',
+      'phone',
+      'gender',
+      'age',
+      'bloodGroup',
+      'address',
+    ];
+
+    const updates = {};
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    });
+
     const user = await User.findByIdAndUpdate(
       req.user._id,
-      { name, phone, gender, age, bloodGroup, address },
-      { new: true, runValidators: true }
+      { $set: updates },
+      {
+        new: true,
+        runValidators: true,
+      }
     );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
 
     await logActivity({
       user,
@@ -124,74 +199,105 @@ exports.updateProfile = async (req, res, next) => {
       details: `${user.email} updated profile details`,
     });
 
-    res.json({ success: true, message: 'Profile updated successfully', user });
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user,
+    });
   } catch (err) {
     next(err);
   }
 };
 
-// POST /api/v1/auth/forgot-password
+// @desc Forgot password
+// @route POST /api/v1/auth/forgot-password
 exports.forgotPassword = async (req, res, next) => {
   try {
-    const { email } = req.body;
+    const email = req.body.email.trim().toLowerCase();
+
     const user = await User.findOne({ email });
+
     if (!user) {
-      return res.status(404).json({ success: false, message: 'No account found with that email' });
+      return res.json({
+        success: true,
+        message:
+          'If an account exists, a password reset link will be sent.',
+      });
     }
 
     const resetToken = user.getResetPasswordToken();
+
     await user.save({ validateBeforeSave: false });
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const clientUrl =
+      process.env.CLIENT_URL || 'http://localhost:5173';
+
     const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
 
     await sendEmail({
       to: user.email,
-      subject: 'MediCare Sync — Password Reset Request',
-      text: `Reset your password using this link (valid for 15 mins): ${resetUrl}`,
+      subject: 'MediCare Sync - Password Reset Request',
+      text: `Reset your password using this link. It is valid for 15 minutes: ${resetUrl}`,
     });
 
     await logActivity({
       user,
       action: 'PASSWORD_RESET_REQUESTED',
-      details: `Password reset token issued for ${user.email}`,
+      details: `Password reset requested for ${user.email}`,
     });
 
-    // Demo convenience: resetToken & resetUrl response mein bhi bhej rahe hain taaki bina SMTP ke test ho sake
-    res.json({
+    const response = {
       success: true,
-      message: 'Password reset link generated! Check email or use the instant reset link below.',
-      resetToken,
-      resetUrl,
-    });
+      message:
+        'If an account exists, a password reset link will be sent.',
+    };
+
+    // Development-only convenience for local testing
+    if (process.env.NODE_ENV !== 'production') {
+      response.resetUrl = resetUrl;
+    }
+
+    res.json(response);
   } catch (err) {
     next(err);
   }
 };
 
-// PUT /api/v1/auth/reset-password/:token
+// @desc Reset password
+// @route PUT /api/v1/auth/reset-password/:token
 exports.resetPassword = async (req, res, next) => {
   try {
-    const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password || password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 8 characters',
+      });
+    }
+
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
 
     const user = await User.findOne({
       resetPasswordToken: hashedToken,
       resetPasswordExpire: { $gt: Date.now() },
-    });
+    }).select('+resetPasswordToken +resetPasswordExpire');
 
     if (!user) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token',
+      });
     }
 
-    if (!req.body.password || req.body.password.length < 8) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'New password must be at least 8 characters' });
-    }
-
-    user.password = req.body.password;
+    user.password = password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
+
     await user.save();
 
     await logActivity({
@@ -200,8 +306,13 @@ exports.resetPassword = async (req, res, next) => {
       details: `${user.email} reset their password`,
     });
 
-    const token = signToken(user._id);
-    res.json({ success: true, message: 'Password reset successful!', token });
+    const newToken = generateToken(user._id);
+
+    res.json({
+      success: true,
+      message: 'Password reset successful',
+      token: newToken,
+    });
   } catch (err) {
     next(err);
   }

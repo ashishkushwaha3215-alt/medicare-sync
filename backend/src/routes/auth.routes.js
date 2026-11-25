@@ -1,7 +1,15 @@
+
 const express = require('express');
-const { body } = require('express-validator');
-const validate = require('../middleware/validate');
-const { protect } = require('../middleware/auth');
+const { body, param } = require('express-validator');
+
+const validate = require('../middlewares/validate.middleware');
+const { protect } = require('../middlewares/auth.middleware');
+
+const {
+  registerRules,
+  loginRules,
+} = require('../validators/auth.validator');
+
 const {
   register,
   login,
@@ -9,34 +17,54 @@ const {
   updateProfile,
   forgotPassword,
   resetPassword,
-} = require('../controllers/authController');
+} = require('../controllers/auth.controller');
 
 const router = express.Router();
 
-router.post(
-  '/register',
-  [
-    body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
-    body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
-    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-  ],
-  validate,
-  register
-);
+// Register
+router.post('/register', registerRules, validate, register);
 
-router.post(
-  '/login',
-  [
-    body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
-    body('password').notEmpty().withMessage('Password is required'),
-  ],
-  validate,
-  login
-);
+// Login
+router.post('/login', loginRules, validate, login);
 
+// Current logged-in user
 router.get('/me', protect, getMe);
+
+// Update profile
 router.put('/profile', protect, updateProfile);
-router.post('/forgot-password', [body('email').isEmail()], validate, forgotPassword);
-router.put('/reset-password/:token', resetPassword);
+
+// Forgot password
+router.post(
+  '/forgot-password',
+  [
+    body('email')
+      .trim()
+      .notEmpty()
+      .withMessage('Email is required')
+      .isEmail()
+      .withMessage('Valid email required')
+      .normalizeEmail(),
+  ],
+  validate,
+  forgotPassword
+);
+
+// Reset password
+router.put(
+  '/reset-password/:token',
+  [
+    param('token')
+      .notEmpty()
+      .withMessage('Reset token is required'),
+
+    body('password')
+      .notEmpty()
+      .withMessage('Password is required')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters'),
+  ],
+  validate,
+  resetPassword
+);
 
 module.exports = router;

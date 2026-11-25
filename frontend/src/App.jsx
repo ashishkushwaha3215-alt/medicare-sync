@@ -1,3 +1,4 @@
+
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
@@ -14,6 +15,7 @@ import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import Reports from './pages/Reports';
 import AdminPanel from './pages/AdminPanel';
+import NotificationCenter from './pages/NotificationCenter';
 
 export default function App() {
   return (
@@ -21,6 +23,7 @@ export default function App() {
       <BrowserRouter>
         <Toaster position="top-right" />
         <Navbar />
+
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
@@ -43,6 +46,15 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <NotificationCenter />
               </ProtectedRoute>
             }
           />

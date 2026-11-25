@@ -1,8 +1,21 @@
+﻿
 const express = require('express');
-const { protect, authorize } = require('../middleware/auth');
+const { body, param } = require('express-validator');
+
+const validate = require('../middlewares/validate.middleware');
+
+const {
+  protect,
+  restrictTo,
+} = require('../middlewares/auth.middleware');
+
 const {
   getAdminOverview,
   getAllPatients,
+  getAllUsers,
+  updateUserDetails,
+  updateUserStatus,
+  bulkUpdateUserStatus,
   deleteUser,
   getAllAppointments,
   getDepartments,
@@ -13,18 +26,99 @@ const {
 
 const router = express.Router();
 
-// Public list of departments (dropdowns ke liye)
+// Authentication and Admin Authorization
+router.use(protect, restrictTo('admin'));
+
+// Dashboard Analytics
+router.get('/overview', getAdminOverview);
+
+// Patient Management
+router.get('/patients', getAllPatients);
+
+// User Management
+router.get('/users', getAllUsers);
+
+// Bulk Update User Status
+router.patch(
+  '/users/bulk-status',
+  [
+    body('userIds')
+      .isArray({ min: 1, max: 100 })
+      .withMessage('Select between 1 and 100 users'),
+
+    body('userIds.*')
+      .isMongoId()
+      .withMessage('Invalid user ID'),
+
+    body('isActive')
+      .isBoolean()
+      .withMessage('isActive must be true or false')
+      .toBoolean(),
+  ],
+  validate,
+  bulkUpdateUserStatus
+);
+
+// Update User Details
+router.patch(
+  '/users/:id',
+  [
+    param('id').isMongoId().withMessage('Invalid user ID'),
+  ],
+  validate,
+  updateUserDetails
+);
+
+// Update User Status
+router.patch(
+  '/users/:id/status',
+  [
+    param('id').isMongoId().withMessage('Invalid user ID'),
+    body('isActive')
+      .isBoolean()
+      .withMessage('isActive must be true or false')
+      .toBoolean(),
+  ],
+  validate,
+  updateUserStatus
+);
+
+// Delete User
+router.delete(
+  '/users/:id',
+  [param('id').isMongoId().withMessage('Invalid user ID')],
+  validate,
+  deleteUser
+);
+
+// Appointment Management
+router.get('/appointments', getAllAppointments);
+
+// Department Management
 router.get('/departments', getDepartments);
 
-// Protected Admin-only routes
-router.use(protect, authorize('admin'));
+router.post(
+  '/departments',
+  [
+    body('name')
+      .trim()
+      .notEmpty()
+      .withMessage('Department name is required')
+      .isLength({ min: 2, max: 100 })
+      .withMessage('Department name must be between 2 and 100 characters'),
+  ],
+  validate,
+  createDepartment
+);
 
-router.get('/overview', getAdminOverview);
-router.get('/patients', getAllPatients);
-router.delete('/users/:id', deleteUser);
-router.get('/appointments', getAllAppointments);
-router.post('/departments', createDepartment);
-router.delete('/departments/:id', deleteDepartment);
+router.delete(
+  '/departments/:id',
+  [param('id').isMongoId().withMessage('Invalid department ID')],
+  validate,
+  deleteDepartment
+);
+
+// Activity Logs
 router.get('/logs', getActivityLogs);
 
 module.exports = router;
